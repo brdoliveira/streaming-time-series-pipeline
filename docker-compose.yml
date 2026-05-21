@@ -1,0 +1,226 @@
+﻿name: streaming-time-series-pipeline
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: pipeline-kafka
+    ports:
+      - "${KAFKA_HOST_PORT:-9092}:29092"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "${KAFKA_TOPIC_PARTITIONS:-3}"
+      KAFKA_LOG_RETENTION_MS: "${KAFKA_RETENTION_MS:-86400000}"
+      KAFKA_LOG_CLEANUP_POLICY: "${KAFKA_CLEANUP_POLICY:-delete}"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  kafka-init:
+    image: apache/kafka:3.9.0
+    container_name: pipeline-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+      KAFKA_TOPIC_RAW: "${KAFKA_TOPIC_RAW:-financial-events-raw}"
+      KAFKA_TOPIC_EVENTS: "${KAFKA_TOPIC_EVENTS:-financial-events}"
+      KAFKA_TOPIC_PROCESSED: "${KAFKA_TOPIC_PROCESSED:-financial-events-processed}"
+      KAFKA_TOPIC_ERRORS: "${KAFKA_TOPIC_ERRORS:-financial-events-invalid}"
+      KAFKA_TOPIC_METRICS: "${KAFKA_TOPIC_METRICS:-pipeline-metrics}"
+      KAFKA_TOPIC_PARTITIONS: "${KAFKA_TOPIC_PARTITIONS:-3}"
+      KAFKA_METRICS_TOPIC_PARTITIONS: "${KAFKA_METRICS_TOPIC_PARTITIONS:-1}"
+      KAFKA_REPLICATION_FACTOR: "${KAFKA_REPLICATION_FACTOR:-1}"
+      KAFKA_RETENTION_MS: "${KAFKA_RETENTION_MS:-86400000}"
+      KAFKA_CLEANUP_POLICY: "${KAFKA_CLEANUP_POLICY:-delete}"
+    command: ["bash", "-c", "export PATH=/opt/kafka/bin:$$PATH && bash /opt/pipeline-kafka/init-topics.sh"]
+    volumes:
+      - ./infra/kafka/init-topics.sh:/opt/pipeline-kafka/init-topics.sh:ro
+    networks:
+      - pipeline-net
+    restart: "no"
+
+  timescaledb:
+    image: timescale/timescaledb:2.16.1-pg16
+    container_name: pipeline-timescaledb
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-pipeline}"
+      POSTGRES_USER: "${POSTGRES_USER:-pipeline}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-pipeline}"
+      TZ: "UTC"
+      PGTZ: "UTC"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./infra/timescaledb/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/timescaledb/queries:/queries:ro
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  flink-jobmanager:
+    image: flink:1.19.1-scala_2.12-java17
+    container_name: pipeline-flink-jobmanager
+    command: jobmanager
+    ports:
+      - "${FLINK_DASHBOARD_HOST_PORT:-8081}:8081"
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.bind-address: 0.0.0.0
+        parallelism.default: ${FLINK_PARALLELISM:-3}
+        state.backend: hashmap
+        execution.checkpointing.interval: 30s
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8081/overview >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  flink-taskmanager:
+    image: flink:1.19.1-scala_2.12-java17
+    container_name: pipeline-flink-taskmanager
+    command: taskmanager
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: ${FLINK_TASK_SLOTS:-3}
+        parallelism.default: ${FLINK_PARALLELISM:-3}
+        state.backend: hashmap
+        execution.checkpointing.interval: 30s
+    networks:
+      - pipeline-net
+
+  grafana:
+    image: grafana/grafana-oss:11.1.4
+    container_name: pipeline-grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_DB: "${POSTGRES_DB:-pipeline}"
+      POSTGRES_USER: "${POSTGRES_USER:-pipeline}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-pipeline}"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  producer:
+    build:
+      context: ./producers
+    profiles: ["app"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+      KAFKA_TOPIC_RAW: "${KAFKA_TOPIC_RAW:-financial-events-raw}"
+      KAFKA_TOPIC_EVENTS: "${KAFKA_TOPIC_EVENTS:-financial-events}"
+      PRODUCER_ID: "${PRODUCER_ID:-}"
+      PRODUCER_TYPE: "${PRODUCER_TYPE:-random}"
+      PRODUCER_SYMBOLS: "${PRODUCER_SYMBOLS:-PETR4,VALE3,ITUB4,BBDC4,ABEV3,MGLU3,BOVA11,AAPL,MSFT,BTC-USD}"
+      PRODUCER_RATE_PER_SECOND: "${PRODUCER_RATE_PER_SECOND:-10}"
+      PRODUCER_SCENARIO: "${PRODUCER_SCENARIO:-low}"
+      PRODUCER_RUN_DURATION_SECONDS: "${PRODUCER_RUN_DURATION_SECONDS:-0}"
+      PRODUCER_RANDOM_SEED: "${PRODUCER_RANDOM_SEED:-}"
+      PRODUCER_SOURCE: "${PRODUCER_SOURCE:-synthetic}"
+      PRODUCER_VOLATILITY: "${PRODUCER_VOLATILITY:-0.015}"
+      PRODUCER_TREND_STRENGTH: "${PRODUCER_TREND_STRENGTH:-0.002}"
+      PRODUCER_BURST_PROBABILITY: "${PRODUCER_BURST_PROBABILITY:-0.05}"
+    networks:
+      - pipeline-net
+
+  flink-job:
+    build:
+      context: ./flink-job
+    container_name: pipeline-flink-job
+    profiles: ["app"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      timescaledb:
+        condition: service_healthy
+      flink-jobmanager:
+        condition: service_healthy
+      flink-taskmanager:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+      KAFKA_TOPIC_RAW: "${KAFKA_TOPIC_RAW:-financial-events-raw}"
+      KAFKA_TOPIC_EVENTS: "${KAFKA_TOPIC_EVENTS:-financial-events}"
+      KAFKA_TOPIC_PROCESSED: "${KAFKA_TOPIC_PROCESSED:-financial-events-processed}"
+      KAFKA_TOPIC_ERRORS: "${KAFKA_TOPIC_ERRORS:-financial-events-invalid}"
+      KAFKA_TOPIC_METRICS: "${KAFKA_TOPIC_METRICS:-pipeline-metrics}"
+      FLINK_KAFKA_GROUP_ID: "${FLINK_KAFKA_GROUP_ID:-financial-events-flink}"
+      POSTGRES_HOST: "timescaledb"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-pipeline}"
+      POSTGRES_USER: "${POSTGRES_USER:-pipeline}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-pipeline}"
+      FLINK_PARALLELISM: "${FLINK_PARALLELISM:-3}"
+      FLINK_CHECKPOINT_INTERVAL_MS: "${FLINK_CHECKPOINT_INTERVAL_MS:-30000}"
+      JDBC_BATCH_SIZE: "${JDBC_BATCH_SIZE:-500}"
+      JDBC_BATCH_INTERVAL_MS: "${JDBC_BATCH_INTERVAL_MS:-1000}"
+      JDBC_MAX_RETRIES: "${JDBC_MAX_RETRIES:-3}"
+      METRICS_WINDOW_SECONDS: "${METRICS_WINDOW_SECONDS:-10}"
+    command: ["/opt/flink/bin/flink", "run", "-m", "flink-jobmanager:8081", "-d", "-c", "br.com.pipeline.FinancialEventsJob", "/opt/flink/usrlib/pipeline-flink-job.jar"]
+    networks:
+      - pipeline-net
+networks:
+  pipeline-net:
+    name: pipeline-net
+    driver: bridge
+
+volumes:
+  kafka-data:
+    name: pipeline-kafka-data
+  timescale-data:
+    name: pipeline-timescale-data
+  grafana-data:
+    name: pipeline-grafana-data
+
