@@ -85,6 +85,10 @@ Eventos que falham na validação são enviados para `financial-events-invalid`.
 
 Resultados salvos em `results/<timestamp>-<scenario>/`. O resumo comparativo fica em `results/summary-<timestamp>/`.
 
+Os experimentos exploratórios de configuração JDBC e paralelismo ficam documentados em
+[`docs/experiments/`](docs/experiments/README.md). Os artefatos brutos permanecem locais e
+não são versionados; os relatórios consolidados registram também as ameaças à validade.
+
 ## Métricas coletadas
 
 | Métrica | Origem |

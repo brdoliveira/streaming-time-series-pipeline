@@ -1,0 +1,6 @@
+run,requested_parallelism,expected_events,observed_events,p50_ms,p95_ms,p99_ms,avg_ms,effective_events_per_second,validity
+20260610-003238-parallelism2,2,300000,300000,13,443,886,125.85,1000.10,valid_single_run
+20260610-005636-parallelism3,3,300000,300000,90,1586,2810,310.52,996.26,invalid_configuration_not_applied
+20260610-011348-parallelism4,4,300000,300000,17,479,876,141.65,1000.12,invalid_configuration_not_applied
+20260610-011949-parallelism6,6,300000,300000,13,428,755,125.61,1000.08,invalid_configuration_not_applied
+20260610-012549-parallelism8,8,300000,300000,31,545,1457,174.91,1000.11,invalid_configuration_not_applied

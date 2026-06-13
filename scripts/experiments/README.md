@@ -108,3 +108,14 @@ docker compose exec timescaledb psql -U pipeline -d pipeline -f /queries/00-heal
 docker compose exec timescaledb psql -U pipeline -d pipeline -f /queries/04-latency-by-scenario.sql
 docker compose exec timescaledb psql -U pipeline -d pipeline -f /queries/05-throughput-per-second.sql
 ```
+
+## Experimentos de configuração
+
+Os runners de variação removem a stack e os volumes em cada execução para garantir
+isolamento:
+
+- [Variação JDBC](README-JDBC-VARIATION.md)
+- [Variação de paralelismo](README-PHASE-2.md)
+
+Os resultados brutos são locais e ignorados pelo Git. A auditoria consolidada fica em
+`docs/experiments/`.
