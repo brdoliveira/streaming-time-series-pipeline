@@ -7,7 +7,7 @@ Pipeline de baixa latência para eventos financeiros simulados, implementada com
 | Camada | Tecnologia | Papel |
 | --- | --- | --- |
 | Fonte de dados | Produtor Python | Gera eventos financeiros sintéticos com timestamp, símbolo, preço e quantidade |
-| Ingestão | Apache Kafka 3.7 | Recebe e distribui eventos em tópicos particionados por símbolo |
+| Ingestão | Apache Kafka 3.9.0 | Recebe e distribui eventos em tópicos particionados por símbolo |
 | Processamento | Apache Flink 1.19 | Valida, enriquece, calcula latência e agrega eventos em janelas de tempo |
 | Persistência | TimescaleDB 2.16 | Armazena séries temporais em hypertables com continuous aggregates |
 | Visualização | Grafana 11 | Exibe painéis operacionais provisionados automaticamente |
@@ -88,6 +88,11 @@ Resultados salvos em `results/<timestamp>-<scenario>/`. O resumo comparativo fic
 Os experimentos exploratórios de configuração JDBC e paralelismo ficam documentados em
 [`docs/experiments/`](docs/experiments/README.md). Os artefatos brutos permanecem locais e
 não são versionados; os relatórios consolidados registram também as ameaças à validade.
+
+> **Validade experimental:** as coletas originais das variações JDBC e de paralelismo
+> foram auditadas como inconclusivas. Elas não comprovam configuração superior. Os runners
+> foram corrigidos para reiniciar volumes e aplicar a configuração a cada execução, mas a
+> matriz comparativa ainda precisa ser repetida ao menos três vezes por configuração.
 
 ## Métricas coletadas
 

@@ -17,7 +17,7 @@ flowchart TD
         PT --> P1 & P2 & P3
     end
 
-    subgraph L2["Camada 2 · Ingestão — Apache Kafka 3.7  ·  KRaft  ·  3 partições"]
+    subgraph L2["Camada 2 · Ingestão — Apache Kafka 3.9.0  ·  KRaft  ·  3 partições"]
         KR["financial-events-raw"]
         KP["financial-events-processed"]
         KI["financial-events-invalid"]
