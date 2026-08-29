@@ -24,6 +24,7 @@ import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
 import org.apache.flink.connector.jdbc.JdbcSink;
+import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -60,6 +61,7 @@ public class FinancialEventsJob {
         env.enableCheckpointing(config.checkpointIntervalMs, CheckpointingMode.AT_LEAST_ONCE);
         env.getCheckpointConfig().setCheckpointTimeout(120_000);
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(5_000);
+        env.getCheckpointConfig().setCheckpointStorage(config.checkpointStorage);
 
         KafkaSource<String> source = KafkaSource.<String>builder()
                 .setBootstrapServers(config.kafkaBootstrapServers)
@@ -80,6 +82,7 @@ public class FinancialEventsJob {
 
         KafkaSink<String> processedEventsSink = KafkaSink.<String>builder()
                 .setBootstrapServers(config.kafkaBootstrapServers)
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic(config.kafkaTopicProcessed)
                         .setValueSerializationSchema(new SimpleStringSchema())
@@ -132,6 +135,7 @@ public class FinancialEventsJob {
 
         KafkaSink<String> invalidEventsSink = KafkaSink.<String>builder()
                 .setBootstrapServers(config.kafkaBootstrapServers)
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic(config.kafkaTopicErrors)
                         .setValueSerializationSchema(new SimpleStringSchema())
@@ -528,6 +532,7 @@ public class FinancialEventsJob {
         public final String postgresPassword;
         public final int flinkParallelism;
         public final long checkpointIntervalMs;
+        public final String checkpointStorage;
         public final int jdbcBatchSize;
         public final long jdbcBatchIntervalMs;
         public final int jdbcMaxRetries;
@@ -547,6 +552,8 @@ public class FinancialEventsJob {
             this.postgresPassword = env.getProperty("POSTGRES_PASSWORD", "pipeline");
             this.flinkParallelism = intValue(env, "FLINK_PARALLELISM", 3);
             this.checkpointIntervalMs = longValue(env, "FLINK_CHECKPOINT_INTERVAL_MS", 30_000);
+            this.checkpointStorage = env.getProperty(
+                    "FLINK_CHECKPOINT_STORAGE", "file:///opt/flink/checkpoints");
             this.jdbcBatchSize = intValue(env, "JDBC_BATCH_SIZE", 500);
             this.jdbcBatchIntervalMs = longValue(env, "JDBC_BATCH_INTERVAL_MS", 1_000);
             this.jdbcMaxRetries = intValue(env, "JDBC_MAX_RETRIES", 3);
@@ -578,6 +585,7 @@ public class FinancialEventsJob {
                     + ", postgresUser=" + postgresUser
                     + ", flinkParallelism=" + flinkParallelism
                     + ", checkpointIntervalMs=" + checkpointIntervalMs
+                    + ", checkpointStorage=" + checkpointStorage
                     + ", jdbcBatchSize=" + jdbcBatchSize
                     + ", jdbcBatchIntervalMs=" + jdbcBatchIntervalMs
                     + ", jdbcMaxRetries=" + jdbcMaxRetries

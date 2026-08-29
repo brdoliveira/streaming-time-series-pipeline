@@ -93,6 +93,9 @@ services:
         parallelism.default: ${FLINK_PARALLELISM:-3}
         state.backend: hashmap
         execution.checkpointing.interval: 30s
+        execution.checkpointing.dir: ${FLINK_CHECKPOINT_STORAGE:-file:///opt/flink/checkpoints}
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
     networks:
       - pipeline-net
     healthcheck:
@@ -116,6 +119,9 @@ services:
         parallelism.default: ${FLINK_PARALLELISM:-3}
         state.backend: hashmap
         execution.checkpointing.interval: 30s
+        execution.checkpointing.dir: ${FLINK_CHECKPOINT_STORAGE:-file:///opt/flink/checkpoints}
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
     networks:
       - pipeline-net
 
@@ -204,6 +210,7 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-pipeline}"
       FLINK_PARALLELISM: "${FLINK_PARALLELISM:-3}"
       FLINK_CHECKPOINT_INTERVAL_MS: "${FLINK_CHECKPOINT_INTERVAL_MS:-30000}"
+      FLINK_CHECKPOINT_STORAGE: "${FLINK_CHECKPOINT_STORAGE:-file:///opt/flink/checkpoints}"
       JDBC_BATCH_SIZE: "${JDBC_BATCH_SIZE:-500}"
       JDBC_BATCH_INTERVAL_MS: "${JDBC_BATCH_INTERVAL_MS:-1000}"
       JDBC_MAX_RETRIES: "${JDBC_MAX_RETRIES:-3}"
@@ -223,4 +230,5 @@ volumes:
     name: pipeline-timescale-data
   grafana-data:
     name: pipeline-grafana-data
-
+  flink-checkpoints:
+    name: pipeline-flink-checkpoints

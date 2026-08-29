@@ -84,6 +84,19 @@ class FinancialEventsJobTest {
     }
 
     @Test
+    @DisplayName("@spec:AC-015 carrega caminho configuravel para checkpoints persistentes")
+    void loadsCheckpointStorageConfiguration() {
+        JobConfig defaults = JobConfig.fromProperties(new Properties());
+        assertEquals("file:///opt/flink/checkpoints", defaults.checkpointStorage);
+
+        Properties overrides = new Properties();
+        overrides.setProperty("FLINK_CHECKPOINT_STORAGE", "file:///custom/checkpoints");
+        JobConfig configured = JobConfig.fromProperties(overrides);
+
+        assertEquals("file:///custom/checkpoints", configured.checkpointStorage);
+    }
+
+    @Test
     @DisplayName("@spec:AC-010 calcula percentis pela regra nearest-rank")
     void calculatesNearestRankPercentiles() {
         List<Long> sorted = List.of(10L, 20L, 30L, 40L, 50L);

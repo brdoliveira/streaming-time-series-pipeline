@@ -7,6 +7,7 @@ import random
 import signal
 import socket
 import sys
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -76,6 +77,63 @@ class ProducerConfig:
     volatility: float
     trend_strength: float
     burst_probability: float
+
+
+@dataclass(frozen=True)
+class PublicationStats:
+    attempted: int
+    confirmed: int
+    failed: int
+
+
+class PublicationDeliveryError(RuntimeError):
+    def __init__(self, stats: PublicationStats) -> None:
+        super().__init__(
+            "Kafka delivery incomplete: "
+            f"attempted={stats.attempted}, confirmed={stats.confirmed}, failed={stats.failed}"
+        )
+        self.stats = stats
+
+
+class PublicationTracker:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._attempted = 0
+        self._confirmed = 0
+        self._failed = 0
+
+    def record_attempt(self) -> None:
+        with self._lock:
+            self._attempted += 1
+
+    def watch(self, future: object, event_id: str, sequence: int) -> None:
+        future.add_callback(self._on_confirmed, event_id, sequence)
+        future.add_errback(self._on_failed, event_id, sequence)
+
+    def record_failure(self, error: BaseException, event_id: str, sequence: int) -> None:
+        self._on_failed(error, event_id, sequence)
+
+    def snapshot(self) -> PublicationStats:
+        with self._lock:
+            return PublicationStats(
+                attempted=self._attempted,
+                confirmed=self._confirmed,
+                failed=self._failed,
+            )
+
+    def _on_confirmed(self, _metadata: object, _event_id: str, _sequence: int) -> None:
+        with self._lock:
+            self._confirmed += 1
+
+    def _on_failed(self, error: BaseException, event_id: str, sequence: int) -> None:
+        with self._lock:
+            self._failed += 1
+        LOGGER.error(
+            "broker rejected event_id=%s sequence=%s error=%s",
+            event_id,
+            sequence,
+            error,
+        )
 
 
 class ShutdownFlag:
@@ -262,16 +320,18 @@ def should_continue(started_at: float, duration_seconds: float, shutdown: Shutdo
     return (time.monotonic() - started_at) < duration_seconds
 
 
-def publish_loop(config: ProducerConfig, producer: KafkaProducer, shutdown: ShutdownFlag) -> int:
+def publish_loop(
+    config: ProducerConfig, producer: KafkaProducer, shutdown: ShutdownFlag
+) -> PublicationStats:
     rng = random.Random(config.random_seed)
     event_generator = MarketEventGenerator(config, rng)
+    tracker = PublicationTracker()
     sequence = 0
-    sent = 0
     interval = 1.0 / config.rate_per_second
     started_at = time.monotonic()
     next_send_at = started_at
     last_log_at = started_at
-    last_log_sent = 0
+    last_log_confirmed = 0
 
     while should_continue(started_at, config.run_duration_seconds, shutdown):
         now = time.monotonic()
@@ -280,31 +340,40 @@ def publish_loop(config: ProducerConfig, producer: KafkaProducer, shutdown: Shut
             continue
 
         event = event_generator.next_event(sequence)
+        tracker.record_attempt()
         try:
-            producer.send(config.topic, key=event.symbol, value=encode_event(event))
-        except KafkaError:
+            future = producer.send(config.topic, key=event.symbol, value=encode_event(event))
+            tracker.watch(future, event.event_id, sequence)
+        except KafkaError as exc:
+            tracker.record_failure(exc, event.event_id, sequence)
             LOGGER.exception("failed to publish event_id=%s sequence=%s", event.event_id, sequence)
-        else:
-            sent += 1
+        finally:
             sequence += 1
 
         next_send_at += interval
 
         if now - last_log_at >= 5:
-            window_sent = sent - last_log_sent
+            stats = tracker.snapshot()
+            window_confirmed = stats.confirmed - last_log_confirmed
             LOGGER.info(
-                "published=%s window_rate=%.2f/s topic=%s producer_type=%s scenario=%s",
-                sent,
-                window_sent / (now - last_log_at),
+                "attempted=%s confirmed=%s failed=%s window_confirmed_rate=%.2f/s "
+                "topic=%s producer_type=%s scenario=%s",
+                stats.attempted,
+                stats.confirmed,
+                stats.failed,
+                window_confirmed / (now - last_log_at),
                 config.topic,
                 config.producer_type,
                 config.scenario,
             )
             last_log_at = now
-            last_log_sent = sent
+            last_log_confirmed = stats.confirmed
 
     producer.flush(timeout=30)
-    return sent
+    stats = tracker.snapshot()
+    if stats.failed > 0 or stats.confirmed != stats.attempted:
+        raise PublicationDeliveryError(stats)
+    return stats
 
 
 def configure_logging() -> None:
@@ -343,8 +412,13 @@ def main() -> int:
         config = load_config()
         log_config(config)
         producer = create_kafka_producer(config.bootstrap_servers)
-        total_sent = publish_loop(config, producer, shutdown)
-        LOGGER.info("producer stopped; total_published=%s", total_sent)
+        stats = publish_loop(config, producer, shutdown)
+        LOGGER.info(
+            "producer stopped; attempted=%s confirmed=%s failed=%s",
+            stats.attempted,
+            stats.confirmed,
+            stats.failed,
+        )
         producer.close(timeout=30)
         return 0
     except Exception:
