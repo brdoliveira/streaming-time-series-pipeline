@@ -92,6 +92,7 @@ $metadata = [ordered]@{
   postgres_db = $PostgresDb
   started_at = (Get-Date).ToUniversalTime().ToString("o")
   output_dir = $runDir
+  resource_collection_status = "pending"
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
 
@@ -110,21 +111,28 @@ Invoke-LoggedCommand -LogPath $logPath -Command @(
 )
 
 $producerLog = Join-Path $runDir "producer.log"
-$statsSamples = Join-Path $runDir "docker-stats-samples.csv"
-"timestamp_utc,container,cpu_percent,memory_usage,memory_percent,net_io,block_io" |
-  Set-Content -LiteralPath $statsSamples -Encoding UTF8
+$statsSamples = [IO.Path]::GetFullPath((Join-Path $runDir "docker-stats-samples.csv"))
+$startCollectorScript = Join-Path $PSScriptRoot "Start-DockerStatsCollector.ps1"
+$stopCollectorScript = Join-Path $PSScriptRoot "Stop-DockerStatsCollector.ps1"
+$statsCollector = $null
 
-$statsJob = Start-Job -ScriptBlock {
-  param($Path, $IntervalSeconds)
-  while ($true) {
-    $timestamp = (Get-Date).ToUniversalTime().ToString("o")
-    docker stats --no-stream --format "{{.Container}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}},{{.NetIO}},{{.BlockIO}}" 2>$null |
-      ForEach-Object {
-        "$timestamp,$_" | Add-Content -LiteralPath $Path
-      }
-    Start-Sleep -Seconds $IntervalSeconds
-  }
-} -ArgumentList $statsSamples, $StatsIntervalSeconds
+try {
+  $statsCollector = & $startCollectorScript `
+    -OutputPath $statsSamples `
+    -IntervalSeconds $StatsIntervalSeconds
+  $metadata["resource_collection_status"] = "running"
+  $metadata["resource_collector_pid"] = $statsCollector.process_id
+  $metadata["resource_collector_log"] = $statsCollector.collector_log_path
+  $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  Add-Content -LiteralPath $logPath -Value "Coletor de recursos iniciado: PID=$($statsCollector.process_id)"
+}
+catch {
+  $metadata["resource_collection_status"] = "start_failed"
+  $metadata["resource_collection_error"] = $_.Exception.Message
+  $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  Add-Content -LiteralPath $logPath -Value "ERRO na coleta de recursos: $($_.Exception.Message)"
+  throw
+}
 
 $producerCommand = @(
   "docker", "compose", "--profile", "app", "up", "-d",
@@ -164,9 +172,28 @@ finally {
   Remove-Item Env:\PRODUCER_RUN_DURATION_SECONDS -ErrorAction SilentlyContinue
   Remove-Item Env:\PRODUCER_ID -ErrorAction SilentlyContinue
   Remove-Item Env:\PRODUCER_TYPE -ErrorAction SilentlyContinue
-  Stop-Job -Job $statsJob -ErrorAction SilentlyContinue | Out-Null
-  Receive-Job -Job $statsJob -ErrorAction SilentlyContinue | Out-Null
-  Remove-Job -Job $statsJob -Force -ErrorAction SilentlyContinue | Out-Null
+
+  if ($statsCollector) {
+    try {
+      $collectorResult = & $stopCollectorScript `
+        -ProcessId $statsCollector.process_id `
+        -OutputPath $statsCollector.output_path `
+        -StopSignalPath $statsCollector.stop_signal_path `
+        -CollectorLogPath $statsCollector.collector_log_path
+      $metadata["resource_collection_status"] = $collectorResult.status
+      $metadata["resource_collection_exit_code"] = $collectorResult.exit_code
+      $metadata["resource_sample_count"] = $collectorResult.docker_sample_count
+      Add-Content -LiteralPath $logPath -Value "Coleta de recursos concluida: samples=$($collectorResult.docker_sample_count)"
+    }
+    catch {
+      $metadata["resource_collection_status"] = "failed"
+      $metadata["resource_collection_error"] = $_.Exception.Message
+      Add-Content -LiteralPath $logPath -Value "ERRO na coleta de recursos: $($_.Exception.Message)"
+      $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+      throw "Falha observavel na coleta de recursos. Consulte $logPath. $($_.Exception.Message)"
+    }
+    $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  }
 }
 
 Start-Sleep -Seconds 10

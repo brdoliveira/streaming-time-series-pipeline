@@ -69,6 +69,7 @@ $metadata = [ordered]@{
   expected_events = ($RatePerSecond * $DurationSeconds)
   started_at = (Get-Date).ToUniversalTime().ToString("o")
   output_dir = $runDir
+  resource_collection_status = "pending"
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
 
@@ -109,81 +110,31 @@ Invoke-LoggedCommand -LogPath $logPath -Command @(
 
 # Iniciar coleta de docker stats
 $statsSamples = [IO.Path]::GetFullPath((Join-Path $runDir "docker-stats-samples.csv"))
-"timestamp_utc,container,cpu_percent,memory_usage,memory_percent,net_io,block_io" |
-  Set-Content -LiteralPath $statsSamples -Encoding UTF8
-
-$statsJob = Start-Job -ScriptBlock {
-  param($Path, $IntervalSeconds)
-  while ($true) {
-    $timestamp = (Get-Date).ToUniversalTime().ToString("o")
-    docker stats --no-stream --format "{{.Container}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}},{{.NetIO}},{{.BlockIO}}" 2>$null |
-      ForEach-Object {
-        "$timestamp,$_" | Add-Content -LiteralPath $Path
-      }
-    Start-Sleep -Seconds $IntervalSeconds
-  }
-} -ArgumentList $statsSamples, $StatsIntervalSeconds
+$startCollectorScript = Join-Path $PSScriptRoot "Start-DockerStatsCollector.ps1"
+$stopCollectorScript = Join-Path $PSScriptRoot "Stop-DockerStatsCollector.ps1"
+$statsCollector = $null
 
 # Iniciar coleta de métricas Flink
 $flinkMetricsPath = [IO.Path]::GetFullPath((Join-Path $runDir "flink-metrics-samples.csv"))
-"timestamp_utc,metric_name,metric_value" |
-  Set-Content -LiteralPath $flinkMetricsPath -Encoding UTF8
 
-$flinkMetricsJob = Start-Job -ScriptBlock {
-  param($OutputPath, $IntervalSeconds)
-
-  $jobId = $null
-  $maxWait = 120
-  $elapsed = 0
-
-  while ($null -eq $jobId -and $elapsed -lt $maxWait) {
-    try {
-      $response = Invoke-RestMethod -Uri "http://localhost:8081/jobs" -TimeoutSec 2 -ErrorAction Stop
-      $runningJob = $response.jobs | Where-Object { $_.status -eq "RUNNING" } | Select-Object -First 1
-      if ($runningJob) {
-        $jobId = $runningJob.id
-      }
-    } catch {}
-
-    if ($null -eq $jobId) {
-      Start-Sleep -Seconds 5
-      $elapsed += 5
-    }
-  }
-
-  if ($null -eq $jobId) {
-    Add-Content -LiteralPath $OutputPath -Value "# Flink job nao entrou em RUNNING"
-    return
-  }
-
-  $metricsToCollect = @(
-    "jvm.memory.heap.used",
-    "jvm.memory.heap.max",
-    "jvm.gc.count",
-    "jvm.gc.time"
-  )
-
-  while ($true) {
-    $timestamp = (Get-Date).ToUniversalTime().ToString("o")
-
-    foreach ($metric in $metricsToCollect) {
-      try {
-        $response = Invoke-RestMethod -Uri "http://localhost:8081/jobs/$jobId/metrics?get=$metric" `
-          -TimeoutSec 2 -ErrorAction SilentlyContinue
-
-        if ($response.values) {
-          foreach ($item in $response.values) {
-            if ($item.value) {
-              "$timestamp,$($item.id),$($item.value)" | Add-Content -LiteralPath $OutputPath
-            }
-          }
-        }
-      } catch {}
-    }
-
-    Start-Sleep -Seconds $IntervalSeconds
-  }
-} -ArgumentList $flinkMetricsPath, $StatsIntervalSeconds
+try {
+  $statsCollector = & $startCollectorScript `
+    -OutputPath $statsSamples `
+    -IntervalSeconds $StatsIntervalSeconds `
+    -FlinkMetricsOutputPath $flinkMetricsPath
+  $metadata["resource_collection_status"] = "running"
+  $metadata["resource_collector_pid"] = $statsCollector.process_id
+  $metadata["resource_collector_log"] = $statsCollector.collector_log_path
+  $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  Add-Content -LiteralPath $logPath -Value "Coletor de recursos iniciado: PID=$($statsCollector.process_id)"
+}
+catch {
+  $metadata["resource_collection_status"] = "start_failed"
+  $metadata["resource_collection_error"] = $_.Exception.Message
+  $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  Add-Content -LiteralPath $logPath -Value "ERRO na coleta de recursos: $($_.Exception.Message)"
+  throw
+}
 
 # Aguardar Flink estar pronto
 Write-Host "Aguardando Flink job entrar em RUNNING..."
@@ -236,12 +187,29 @@ finally {
   Remove-Item Env:\PRODUCER_TYPE -ErrorAction SilentlyContinue
 
   Write-Host "Parando coleta de metricas..."
-  Stop-Job -Job $statsJob -ErrorAction SilentlyContinue | Out-Null
-  Stop-Job -Job $flinkMetricsJob -ErrorAction SilentlyContinue | Out-Null
-  Receive-Job -Job $statsJob -ErrorAction SilentlyContinue | Out-Null
-  Receive-Job -Job $flinkMetricsJob -ErrorAction SilentlyContinue | Out-Null
-  Remove-Job -Job $statsJob -Force -ErrorAction SilentlyContinue | Out-Null
-  Remove-Job -Job $flinkMetricsJob -Force -ErrorAction SilentlyContinue | Out-Null
+  if ($statsCollector) {
+    try {
+      $collectorResult = & $stopCollectorScript `
+        -ProcessId $statsCollector.process_id `
+        -OutputPath $statsCollector.output_path `
+        -StopSignalPath $statsCollector.stop_signal_path `
+        -CollectorLogPath $statsCollector.collector_log_path `
+        -FlinkMetricsOutputPath $statsCollector.flink_metrics_output_path
+      $metadata["resource_collection_status"] = $collectorResult.status
+      $metadata["resource_collection_exit_code"] = $collectorResult.exit_code
+      $metadata["resource_sample_count"] = $collectorResult.docker_sample_count
+      $metadata["flink_metric_sample_count"] = $collectorResult.flink_sample_count
+      Add-Content -LiteralPath $logPath -Value "Coleta de recursos concluida: docker_samples=$($collectorResult.docker_sample_count); flink_samples=$($collectorResult.flink_sample_count)"
+    }
+    catch {
+      $metadata["resource_collection_status"] = "failed"
+      $metadata["resource_collection_error"] = $_.Exception.Message
+      Add-Content -LiteralPath $logPath -Value "ERRO na coleta de recursos: $($_.Exception.Message)"
+      $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+      throw "Falha observavel na coleta de recursos. Consulte $logPath. $($_.Exception.Message)"
+    }
+    $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+  }
 }
 
 $expectedEvents = $RatePerSecond * $DurationSeconds
