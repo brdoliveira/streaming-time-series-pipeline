@@ -18,9 +18,22 @@ $stackStartedByScript = $false
 function Invoke-DockerChecked {
     param([Parameter(Mandatory)][string[]]$Arguments)
 
-    $output = & docker @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "docker $($Arguments -join ' ') falhou (exit $LASTEXITCODE):`n$($output | Out-String)"
+    # Windows PowerShell 5.1 transforma qualquer linha nativa em stderr em
+    # NativeCommandError quando ErrorActionPreference=Stop. O Compose usa
+    # stderr para progresso normal de build, portanto o exit code e a unica
+    # fonte confiavel para decidir sucesso ou falha.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & docker @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($exitCode -ne 0) {
+        throw "docker $($Arguments -join ' ') falhou (exit $exitCode):`n$($output | Out-String)"
     }
     return ($output | Out-String).Trim()
 }
@@ -155,7 +168,7 @@ try {
     }
 
     Wait-ForCondition -Description "encontrar o evento rejeitado no topico de invalidos" -Condition {
-        $consumeCommand = "/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic '$KafkaInvalidTopic' --from-beginning --timeout-ms 5000 2>/dev/null | grep -F -m 1 '$invalidEventId'"
+        $consumeCommand = "for partition in `$('/opt/kafka/bin/kafka-get-offsets.sh' --bootstrap-server kafka:9092 --topic '$KafkaInvalidTopic' | cut -d: -f2); do /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic '$KafkaInvalidTopic' --partition `$partition --offset earliest --timeout-ms 5000 2>/dev/null; done | grep -F -m 1 '$invalidEventId'"
         $output = & docker compose exec -T kafka bash -lc $consumeCommand 2>&1
         return $LASTEXITCODE -eq 0 -and (($output | Out-String) -match [Regex]::Escape($invalidEventId))
     }
