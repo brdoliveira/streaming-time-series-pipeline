@@ -42,3 +42,21 @@ acúmulo de registros no TimescaleDB, garantindo independência entre execuçõe
 Para produzir evidência comparativa, execute ao menos três repetições por configuração.
 Depois, use os scripts de análise para consolidar somente execuções cuja contagem tenha sido
 validada.
+
+## Benchmark equivalente de consultas
+
+O ganho exploratorio reportado anteriormente comparava consultas com granularidades
+diferentes. Para uma comparacao controlada, use:
+
+```powershell
+.\scripts\experiments\Measure-EquivalentQueryBenchmark.ps1 `
+  -Repetitions 10 `
+  -WarmupRuns 2 `
+  -WindowHours 24
+```
+
+O runner alinha a janela em buckets completos de 15 minutos, atualiza as CAGGs, exige
+igualdade entre as linhas retornadas pelos caminhos raw e CAGG e somente entao mede as
+consultas. As repeticoes alternam a ordem de execucao e sao gravadas individualmente em
+CSV; os aquecimentos nao entram nas medicoes. Os arquivos ficam em
+`scripts/experiments/results-query-benchmark/`.
