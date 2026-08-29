@@ -41,12 +41,21 @@ function Get-QueryBlock {
 function Invoke-Psql {
   param([Parameter(Mandatory)] [string]$Sql)
 
-  $output = & docker compose exec -T timescaledb psql -X -q -t -A -F "|" `
-    -v ON_ERROR_STOP=1 -U $PostgresUser -d $PostgresDb -c $Sql 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    throw "psql falhou (exit $LASTEXITCODE): $($output -join [Environment]::NewLine)"
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = & docker compose exec -T timescaledb psql -X -q -t -A -F "|" `
+      -v ON_ERROR_STOP=1 -U $PostgresUser -d $PostgresDb -c $Sql 2>&1
+    $exitCode = $LASTEXITCODE
   }
-  return (($output | ForEach-Object { $_.ToString().TrimEnd() }) -join "`n").Trim()
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) {
+    throw "psql falhou (exit $exitCode): $($output -join [Environment]::NewLine)"
+  }
+  $resultLines = $output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }
+  return (($resultLines | ForEach-Object { $_.ToString().TrimEnd() }) -join "`n").Trim()
 }
 
 function Invoke-MeasuredQuery {
@@ -59,7 +68,14 @@ function Invoke-MeasuredQuery {
   $result = Invoke-Psql -Sql $Sql
   $stopwatch.Stop()
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($result)
-  $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $hashBytes = $sha256.ComputeHash($bytes)
+  }
+  finally {
+    $sha256.Dispose()
+  }
+  $hash = [BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
   $rowCount = if ([string]::IsNullOrWhiteSpace($result)) { 0 } else { ($result -split "`n").Count }
 
   return [pscustomobject]@{
@@ -118,7 +134,7 @@ try {
           sequence = $sequence
           repetition = $repetition
           query_type = $queryType
-          elapsed_ms = $measurement.ElapsedMs
+          elapsed_ms = $measurement.ElapsedMs.ToString("0.000", [Globalization.CultureInfo]::InvariantCulture)
           row_count = $measurement.RowCount
           result_hash = $measurement.ResultHash
           window_start_utc = $startIso

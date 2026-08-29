@@ -60,3 +60,11 @@ igualdade entre as linhas retornadas pelos caminhos raw e CAGG e somente entao m
 consultas. As repeticoes alternam a ordem de execucao e sao gravadas individualmente em
 CSV; os aquecimentos nao entram nas medicoes. Os arquivos ficam em
 `scripts/experiments/results-query-benchmark/`.
+
+## Validacao final executavel
+
+O registro de smoke ponta a ponta, coleta real de recursos, benchmark equivalente e
+recuperacao por checkpoint esta em
+[`final-validation-2026-08-29.md`](final-validation-2026-08-29.md). Os numeros desse
+registro sao observacoes do ambiente local e preservam as ressalvas de causalidade da
+auditoria experimental.
