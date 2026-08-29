@@ -9,6 +9,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$CollectorLogPath,
 
+  [Parameter(Mandatory = $true)]
+  [string]$StatusPath,
+
   [ValidateRange(1, 3600)]
   [int]$IntervalSeconds = 5,
 
@@ -28,6 +31,27 @@ function Write-CollectorLog {
 
   $timestamp = (Get-Date).ToUniversalTime().ToString("o")
   Add-Content -LiteralPath $CollectorLogPath -Value "$timestamp [$Level] $Message" -Encoding UTF8
+}
+
+function Write-CollectorStatus {
+  param(
+    [ValidateSet("running", "success", "failed")]
+    [string]$Status,
+    [int]$ExitCode,
+    [string]$Message = ""
+  )
+
+  $payload = [ordered]@{
+    status = $Status
+    exit_code = $ExitCode
+    message = $Message
+    docker_sample_count = $dockerSampleCount
+    flink_sample_count = $flinkSampleCount
+    updated_at = (Get-Date).ToUniversalTime().ToString("o")
+  } | ConvertTo-Json -Compress
+  $temporaryPath = "$StatusPath.tmp"
+  $payload | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
+  Move-Item -LiteralPath $temporaryPath -Destination $StatusPath -Force
 }
 
 function Initialize-OutputFile {
@@ -59,6 +83,7 @@ try {
   $OutputPath = [IO.Path]::GetFullPath($OutputPath)
   $StopSignalPath = [IO.Path]::GetFullPath($StopSignalPath)
   $CollectorLogPath = [IO.Path]::GetFullPath($CollectorLogPath)
+  $StatusPath = [IO.Path]::GetFullPath($StatusPath)
   if ($FlinkMetricsOutputPath) {
     $FlinkMetricsOutputPath = [IO.Path]::GetFullPath($FlinkMetricsOutputPath)
   }
@@ -76,6 +101,7 @@ try {
   $flinkJobId = $null
   $dockerSampleCount = 0
   $flinkSampleCount = 0
+  Write-CollectorStatus -Status running -ExitCode -1
   Write-CollectorLog -Level INFO -Message "Coletor iniciado (intervalo=${IntervalSeconds}s)."
 
   while (-not (Test-Path -LiteralPath $StopSignalPath)) {
@@ -149,11 +175,13 @@ try {
   }
 
   Write-CollectorLog -Level INFO -Message "Coletor encerrado: docker_samples=$dockerSampleCount; flink_samples=$flinkSampleCount."
+  Write-CollectorStatus -Status success -ExitCode 0
   exit 0
 }
 catch {
   try {
     Write-CollectorLog -Level ERROR -Message $_.Exception.Message
+    Write-CollectorStatus -Status failed -ExitCode 1 -Message $_.Exception.Message
   }
   catch {}
   [Console]::Error.WriteLine("Falha no coletor de recursos: $($_.Exception.Message)")

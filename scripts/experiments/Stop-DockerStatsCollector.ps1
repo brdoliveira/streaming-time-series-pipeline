@@ -12,6 +12,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$CollectorLogPath,
 
+  [Parameter(Mandatory = $true)]
+  [string]$StatusPath,
+
   [string]$FlinkMetricsOutputPath = "",
 
   [ValidateRange(1, 300)]
@@ -41,9 +44,12 @@ try {
     throw "Timeout de ${TimeoutSeconds}s ao encerrar o coletor de recursos (PID $ProcessId)."
   }
 
-  $exitCode = $process.ExitCode
-  if ($exitCode -ne 0) {
-    throw "O coletor de recursos terminou com exit_code=$exitCode. $(Get-CollectorLogDetails)"
+  if (-not (Test-Path -LiteralPath $StatusPath -PathType Leaf)) {
+    throw "O coletor terminou sem gravar o status esperado: $StatusPath. $(Get-CollectorLogDetails)"
+  }
+  $collectorStatus = Get-Content -LiteralPath $StatusPath -Raw | ConvertFrom-Json
+  if ($collectorStatus.status -ne "success" -or [int]$collectorStatus.exit_code -ne 0) {
+    throw "O coletor terminou com status=$($collectorStatus.status), exit_code=$($collectorStatus.exit_code). $(Get-CollectorLogDetails)"
   }
 }
 finally {

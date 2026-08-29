@@ -19,6 +19,7 @@ function ConvertTo-QuotedArgument {
 $outputFullPath = [IO.Path]::GetFullPath($OutputPath)
 $stopSignalPath = "$outputFullPath.stop"
 $collectorLogPath = "$outputFullPath.collector.log"
+$statusPath = "$outputFullPath.status.json"
 $collectorScriptPath = Join-Path $PSScriptRoot "Collect-DockerStats.ps1"
 
 if (-not (Test-Path -LiteralPath $collectorScriptPath -PathType Leaf)) {
@@ -27,6 +28,9 @@ if (-not (Test-Path -LiteralPath $collectorScriptPath -PathType Leaf)) {
 
 if (Test-Path -LiteralPath $stopSignalPath) {
   Remove-Item -LiteralPath $stopSignalPath -Force
+}
+if (Test-Path -LiteralPath $statusPath) {
+  Remove-Item -LiteralPath $statusPath -Force
 }
 
 $enginePath = (Get-Process -Id $PID).Path
@@ -42,6 +46,7 @@ $arguments = @(
   "-OutputPath", (ConvertTo-QuotedArgument $outputFullPath),
   "-StopSignalPath", (ConvertTo-QuotedArgument $stopSignalPath),
   "-CollectorLogPath", (ConvertTo-QuotedArgument $collectorLogPath),
+  "-StatusPath", (ConvertTo-QuotedArgument $statusPath),
   "-IntervalSeconds", [string]$IntervalSeconds
 )
 
@@ -75,6 +80,7 @@ if ($process.HasExited) {
   output_path = $outputFullPath
   stop_signal_path = $stopSignalPath
   collector_log_path = $collectorLogPath
+  status_path = $statusPath
   flink_metrics_output_path = $flinkFullPath
   started_at = (Get-Date).ToUniversalTime().ToString("o")
 }

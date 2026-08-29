@@ -123,6 +123,7 @@ try {
   $metadata["resource_collection_status"] = "running"
   $metadata["resource_collector_pid"] = $statsCollector.process_id
   $metadata["resource_collector_log"] = $statsCollector.collector_log_path
+  $metadata["resource_collector_status_file"] = $statsCollector.status_path
   $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
   Add-Content -LiteralPath $logPath -Value "Coletor de recursos iniciado: PID=$($statsCollector.process_id)"
 }
@@ -179,7 +180,8 @@ finally {
         -ProcessId $statsCollector.process_id `
         -OutputPath $statsCollector.output_path `
         -StopSignalPath $statsCollector.stop_signal_path `
-        -CollectorLogPath $statsCollector.collector_log_path
+        -CollectorLogPath $statsCollector.collector_log_path `
+        -StatusPath $statsCollector.status_path
       $metadata["resource_collection_status"] = $collectorResult.status
       $metadata["resource_collection_exit_code"] = $collectorResult.exit_code
       $metadata["resource_sample_count"] = $collectorResult.docker_sample_count
