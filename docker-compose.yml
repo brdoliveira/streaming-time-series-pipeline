@@ -80,10 +80,23 @@ services:
       retries: 12
       start_period: 20s
 
+  flink-checkpoint-init:
+    image: flink:1.19.1-scala_2.12-java17
+    container_name: pipeline-flink-checkpoint-init
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 9999:9999 /opt/flink/checkpoints && chmod 0770 /opt/flink/checkpoints"]
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+    restart: "no"
+
   flink-jobmanager:
     image: flink:1.19.1-scala_2.12-java17
     container_name: pipeline-flink-jobmanager
     command: jobmanager
+    depends_on:
+      flink-checkpoint-init:
+        condition: service_completed_successfully
     ports:
       - "${FLINK_DASHBOARD_HOST_PORT:-8081}:8081"
     environment:
@@ -110,6 +123,8 @@ services:
     container_name: pipeline-flink-taskmanager
     command: taskmanager
     depends_on:
+      flink-checkpoint-init:
+        condition: service_completed_successfully
       flink-jobmanager:
         condition: service_started
     environment:
