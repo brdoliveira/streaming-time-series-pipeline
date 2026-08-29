@@ -16,7 +16,13 @@ Pipeline de baixa latência para eventos financeiros simulados, implementada com
 
 - Docker Desktop aberto com engine Linux ativo
 - PowerShell 5.1+
+- Java 17 para compilar e testar fora do Docker
+- Python 3.11 para executar a suíte do produtor
 - Executar todos os comandos a partir da raiz `projeto/`
+
+Não é necessário instalar Maven globalmente. O Maven Wrapper oficial baixa e reutiliza
+a versão 3.9.9 declarada em `.mvn/wrapper/maven-wrapper.properties`, validando o SHA-256
+da distribuição antes de executá-la.
 
 ## Quick start
 
@@ -33,6 +39,55 @@ docker compose up -d
 # 4. Abrir Grafana
 Start-Process http://localhost:3000   # admin / admin
 ```
+
+## Build e testes reproduzíveis
+
+No Windows:
+
+```powershell
+# Java/Flink (baixa o Maven fixado na primeira execução)
+.\mvnw.cmd --batch-mode --no-transfer-progress -f flink-job/pom.xml clean test package
+
+# Python/produtor
+py -3.11 -m pip install -r producers/requirements.txt
+py -3.11 -m unittest discover -s producers/tests -p "test_*.py" -v
+
+# Configuração do ambiente
+docker compose config --quiet
+```
+
+Em Linux ou macOS, execute o build Java com
+`sh ./mvnw --batch-mode --no-transfer-progress -f flink-job/pom.xml clean test package`.
+
+A automação em `.github/workflows/ci.yml` repete essas provas em ambiente limpo,
+valida os JSON versionados com Node.js, confere o Compose e executa o smoke test.
+
+## Smoke test determinístico
+
+Com a stack e o job Flink já saudáveis, o teste publica um evento válido e um inválido
+identificados por UUIDs exclusivos. Ele exige exatamente um registro correspondente no
+TimescaleDB, nenhuma persistência do inválido e a presença da rejeição no tópico Kafka:
+
+```powershell
+.\scripts\Smoke-Test.ps1
+```
+
+Para construir e iniciar somente os componentes necessários antes da prova:
+
+```powershell
+.\scripts\Smoke-Test.ps1 -StartStack
+```
+
+Em ambiente descartável (como a CI), `-Cleanup` remove também os volumes depois da
+execução. Não use essa opção sobre resultados locais que precisem ser preservados:
+
+```powershell
+.\scripts\Smoke-Test.ps1 -StartStack -Cleanup
+```
+
+Se `.env` alterar nomes de tópicos ou credenciais, informe os valores correspondentes
+pelos parâmetros `-KafkaRawTopic`, `-KafkaInvalidTopic`, `-DatabaseName` e
+`-DatabaseUser`.
 
 ## Serviços e portas
 
