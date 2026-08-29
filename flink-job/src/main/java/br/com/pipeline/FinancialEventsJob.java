@@ -259,28 +259,35 @@ public class FinancialEventsJob {
         public void processElement(String raw, Context context, Collector<ProcessedFinancialEvent> out) {
             Instant processingTime = Instant.now();
             try {
-                FinancialEvent event = MAPPER.readValue(raw, FinancialEvent.class);
-                validate(event);
-
-                ProcessedFinancialEvent processed = new ProcessedFinancialEvent();
-                processed.eventId = event.event_id;
-                processed.producerId = isBlank(event.producer_id) ? "unknown" : event.producer_id;
-                processed.symbol = event.symbol.toUpperCase(Locale.ROOT);
-                processed.price = event.price;
-                processed.quantity = event.quantity;
-                processed.eventTime = Instant.parse(event.event_time);
-                processed.producerTime = Instant.parse(event.producer_time);
-                processed.processingTime = processingTime;
-                processed.source = event.source;
-                processed.scenario = event.scenario;
-                processed.sequence = event.sequence;
-                processed.ingestionLatencyMs = Math.max(0, Duration.between(processed.producerTime, processingTime).toMillis());
-                processed.eventLagMs = Math.max(0, Duration.between(processed.eventTime, processingTime).toMillis());
-                out.collect(processed);
+                out.collect(validateAndEnrich(raw, processingTime));
             } catch (Exception ex) {
                 LOGGER.warn("Invalid event rejected: {}", ex.getMessage());
                 context.output(INVALID_EVENTS, invalidEventJson(raw, processingTime, ex.getMessage()));
             }
+        }
+
+        static ProcessedFinancialEvent validateAndEnrich(String raw, Instant processingTime)
+                throws JsonProcessingException {
+            FinancialEvent event = MAPPER.readValue(raw, FinancialEvent.class);
+            validate(event);
+
+            ProcessedFinancialEvent processed = new ProcessedFinancialEvent();
+            processed.eventId = event.event_id;
+            processed.producerId = isBlank(event.producer_id) ? "unknown" : event.producer_id;
+            processed.symbol = event.symbol.toUpperCase(Locale.ROOT);
+            processed.price = event.price;
+            processed.quantity = event.quantity;
+            processed.eventTime = Instant.parse(event.event_time);
+            processed.producerTime = Instant.parse(event.producer_time);
+            processed.processingTime = processingTime;
+            processed.source = event.source;
+            processed.scenario = event.scenario;
+            processed.sequence = event.sequence;
+            processed.ingestionLatencyMs = Math.max(
+                    0, Duration.between(processed.producerTime, processingTime).toMillis());
+            processed.eventLagMs = Math.max(
+                    0, Duration.between(processed.eventTime, processingTime).toMillis());
+            return processed;
         }
 
         private static void validate(FinancialEvent event) {
@@ -388,10 +395,25 @@ public class FinancialEventsJob {
                 Context context,
                 Iterable<ProcessedFinancialEvent> events,
                 Collector<FinancialEventMetric> out) {
+            FinancialEventMetric metric = aggregateMetric(
+                    key,
+                    Instant.ofEpochMilli(context.window().getStart()),
+                    Instant.ofEpochMilli(context.window().getEnd()),
+                    events);
+            if (metric != null) {
+                out.collect(metric);
+            }
+        }
+
+        static FinancialEventMetric aggregateMetric(
+                String key,
+                Instant bucketStart,
+                Instant bucketEnd,
+                Iterable<ProcessedFinancialEvent> events) {
             List<ProcessedFinancialEvent> values = new ArrayList<>();
             events.forEach(values::add);
             if (values.isEmpty()) {
-                return;
+                return null;
             }
 
             String[] keyParts = key.split("\\|", 2);
@@ -422,8 +444,8 @@ public class FinancialEventsJob {
             long count = values.size();
 
             FinancialEventMetric metric = new FinancialEventMetric();
-            metric.bucketStart = Instant.ofEpochMilli(context.window().getStart());
-            metric.bucketEnd = Instant.ofEpochMilli(context.window().getEnd());
+            metric.bucketStart = bucketStart;
+            metric.bucketEnd = bucketEnd;
             metric.symbol = symbol;
             metric.scenario = scenario;
             metric.eventCount = count;
@@ -438,10 +460,10 @@ public class FinancialEventsJob {
             metric.maxIngestionLatencyMs = maxLatency;
             metric.avgEventLagMs = BigDecimal.valueOf(totalLag)
                     .divide(BigDecimal.valueOf(count), 2, java.math.RoundingMode.HALF_UP);
-            out.collect(metric);
+            return metric;
         }
 
-        private static long percentile(List<Long> sortedValues, double percentile) {
+        static long percentile(List<Long> sortedValues, double percentile) {
             if (sortedValues.isEmpty()) {
                 return 0;
             }
@@ -535,6 +557,10 @@ public class FinancialEventsJob {
             Properties props = new Properties();
             System.getenv().forEach(props::setProperty);
             return new JobConfig(props);
+        }
+
+        static JobConfig fromProperties(Properties properties) {
+            return new JobConfig(properties);
         }
 
         String jdbcUrl() {

@@ -28,11 +28,13 @@ SELECT time_bucket('15 minutes', bucket) AS bucket,
        symbol,
        scenario,
        sum(event_count)        AS event_count,
-       avg(avg_price)          AS avg_price,
+       sum(avg_price * event_count) /
+         NULLIF(sum(event_count), 0) AS avg_price,
        min(min_price)          AS min_price,
        max(max_price)          AS max_price,
        sum(total_quantity)     AS total_quantity,
-       avg(avg_latency_ms)     AS avg_latency_ms,
+       sum(avg_latency_ms * event_count) /
+         NULLIF(sum(event_count), 0) AS avg_latency_ms,
        max(max_latency_ms)     AS max_latency_ms
 FROM cagg_events_1min
 GROUP BY time_bucket('15 minutes', bucket), symbol, scenario
