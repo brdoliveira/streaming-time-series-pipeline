@@ -1,0 +1,4 @@
+scenario,rate_per_second,duration_seconds,repetitions,events_per_run,events_total,avg_latency_run_mean_ms,avg_latency_run_sd_ms,avg_latency_run_min_ms,avg_latency_run_max_ms,p50_run_median_ms,p50_run_min_ms,p50_run_max_ms,p95_run_median_ms,p95_run_min_ms,p95_run_max_ms,throughput_run_mean_eps,throughput_run_sd_eps,stack_cpu_mean_percent,stack_cpu_p95_percent,stack_memory_mean_mib,stack_memory_p95_mib,resource_rows_total,resource_timepoints_total
+low,10,300,3,3000,9000,45.64,39.85,14.86,90.65,13.0,13.0,13.0,71.05,15.0,426.4,10.0,0.0,56.7,196.71,1621.73,1776.11,509,87
+medium,100,600,3,60000,180000,81.11,125.93,8.35,226.52,11.0,11.0,12.0,13.0,13.0,1298.2,100.01,0.0,54.29,176.58,2252.37,2436.3,891,149
+high,1000,600,3,600000,1800000,84.03,40.83,59.9,131.18,12.0,11.0,13.0,246.0,241.0,536.0,999.98,0.1,121.97,249.6,2585.62,2685.33,897,150

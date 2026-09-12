@@ -1,7 +1,33 @@
 # Auditoria dos experimentos de configuração
 
 Esta pasta organiza os resultados exploratórios executados em 9 e 10 de junho de 2026.
-Os dados brutos permanecem em `scripts/experiments/results-*` e são ignorados pelo Git.
+Os dados brutos das matrizes exploratórias permanecem em `scripts/experiments/results-*`
+e são ignorados pelo Git. A exceção é `results-repeated`, que preserva as nove execuções
+dos cenários finais realizadas em 7 de setembro de 2026.
+
+## Repetições dos cenários finais
+
+Cada taxa foi executada três vezes. Uma série usa stack e volumes exclusivos; dentro da
+série, os cenários seguem a ordem baixa, média e alta. Esse desenho permite observar a
+variabilidade entre séries, mas a ordem fixa ainda mistura possíveis efeitos de carga,
+aquecimento e concorrência do host.
+
+- Dados brutos: `scripts/experiments/results-repeated/`.
+- Consolidação por execução: `data/repeated-runs-2026-09-07.csv`.
+- Consolidação por cenário: `data/repeated-scenario-summary-2026-09-07.csv`.
+- Consultas: `data/repeated-query-summary-2026-09-07.csv`.
+- Manifesto e hashes: `data/repeated-experiments-2026-09-07.json`.
+- Auditoria independente: `data/repeated-results-audit-2026-09-12.json`.
+
+Para refazer a verificação sem alterar os resultados:
+
+```powershell
+python .\scripts\experiments\audit_repeated_results.py
+```
+
+A auditoria exige nove runs, três por cenário, correspondência entre contagem esperada,
+latência e throughput, seis medições de consulta e coleta de recursos concluída. Ela
+também calcula um SHA-256 por diretório para detectar alterações posteriores.
 
 ## Situação dos resultados
 

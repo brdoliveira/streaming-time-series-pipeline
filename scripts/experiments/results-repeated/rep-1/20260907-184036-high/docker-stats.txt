@@ -1,0 +1,6 @@
+﻿CONTAINER      CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O
+f0ca9beaee79   1.57%     776.7MiB / 7.669GiB   9.89%     298MB / 517MB     20.4MB / 47.3MB
+7015ccbd4117   0.05%     55.43MiB / 7.669GiB   0.71%     38kB / 9.63kB     194MB / 23.6MB
+780cf24df99c   1.17%     614.4MiB / 7.669GiB   7.82%     27.7MB / 23.8MB   148MB / 68.3MB
+d6e0c9f9bb0e   2.52%     346.7MiB / 7.669GiB   4.42%     187MB / 19.1MB    196MB / 1.88GB
+4c260e843873   1.03%     1.044GiB / 7.669GiB   13.62%    531MB / 271MB     167MB / 487MB

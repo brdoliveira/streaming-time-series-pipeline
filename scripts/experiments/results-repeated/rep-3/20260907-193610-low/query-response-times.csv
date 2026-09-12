@@ -1,0 +1,7 @@
+﻿query,window,scenario,type,elapsed_ms
+01-last-5-minutes,5min,low,raw,233.69
+02-last-1-hour,1h,low,raw,246.21
+03-last-24-hours,24h,low,raw,238.16
+10-cagg-last-5-minutes,5min,low,cagg,236.97
+11-cagg-last-1-hour,1h,low,cagg,251.63
+12-cagg-last-24-hours,24h,low,cagg,249.16

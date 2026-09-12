@@ -1,0 +1,19 @@
+﻿{
+    "scenario":  "low",
+    "rate_per_second":  10,
+    "duration_seconds":  300,
+    "stats_interval_seconds":  10,
+    "producer_count":  1,
+    "producer_type":  "random",
+    "postgres_user":  "pipeline",
+    "postgres_db":  "pipeline",
+    "started_at":  "2026-09-07T21:19:33.1615160Z",
+    "output_dir":  "scripts\\experiments\\results-repeated\\rep-1\\20260907-181933-low",
+    "resource_collection_status":  "success",
+    "resource_collector_pid":  17936,
+    "resource_collector_log":  "C:\\Users\\brufe\\OneDrive\\Documentos\\tcc\\projeto\\scripts\\experiments\\results-repeated\\rep-1\\20260907-181933-low\\docker-stats-samples.csv.collector.log",
+    "resource_collector_status_file":  "C:\\Users\\brufe\\OneDrive\\Documentos\\tcc\\projeto\\scripts\\experiments\\results-repeated\\rep-1\\20260907-181933-low\\docker-stats-samples.csv.status.json",
+    "resource_collection_exit_code":  0,
+    "resource_sample_count":  186,
+    "completed_at":  "2026-09-07T21:29:40.3268842Z"
+}

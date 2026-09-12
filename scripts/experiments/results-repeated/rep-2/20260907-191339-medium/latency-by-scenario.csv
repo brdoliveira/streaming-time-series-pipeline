@@ -1,0 +1,3 @@
+﻿scenario,total_events,avg_latency_ms,stddev_latency_ms,p50_latency_ms,p95_latency_ms,max_latency_ms,avg_event_lag_ms
+low,3000,31.40,110.79,13,71.04999999999973,1394,31.43
+medium,60000,8.35,14.27,11,13,822,8.39

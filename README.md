@@ -134,11 +134,17 @@ Eventos que falham na validação são enviados para `financial-events-invalid`.
 # Todos os cenários em sequência
 .\scripts\experiments\Run-All-Scenarios.ps1
 
+# Série isolada para repetição experimental
+.\scripts\experiments\Run-Isolated-Repetition.ps1 -Repetition 1
+
 # Gerar resumo comparativo após os experimentos
 .\scripts\experiments\Collect-Summary.ps1
 ```
 
-Resultados salvos em `results/<timestamp>-<scenario>/`. O resumo comparativo fica em `results/summary-<timestamp>/`.
+Resultados salvos em `results/<timestamp>-<scenario>/`. O resumo comparativo fica em
+`results/summary-<timestamp>/`. As três séries finais de 7 de setembro de 2026 foram
+preservadas em `scripts/experiments/results-repeated/`, junto com uma auditoria de
+contagem, consultas e coleta de recursos.
 
 Os experimentos exploratórios de configuração JDBC e paralelismo ficam documentados em
 [`docs/experiments/`](docs/experiments/README.md). Os artefatos brutos permanecem locais e
@@ -153,7 +159,7 @@ não são versionados; os relatórios consolidados registram também as ameaças
 
 | Métrica | Origem |
 | --- | --- |
-| Latência ponta a ponta (avg, stddev, p50, p95, max) | `financial_events.ingestion_latency_ms` |
+| Latência até o início do processamento Flink (avg, stddev, p50, p95, max) | `financial_events.ingestion_latency_ms` |
 | Throughput efetivo (eventos/s) | `financial_events.processing_time` |
 | Uso de CPU e memória por cenário | `docker stats` amostrado a cada 10 s |
 | Tempo de resposta das consultas temporais (raw vs cagg) | `Measure-Command` sobre psql |

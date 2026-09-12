@@ -1,0 +1,2 @@
+﻿scenario,first_processing_time,last_processing_time,total_events,effective_events_per_second
+low,2026-09-07 22:08:08.246492+00,2026-09-07 22:13:08.113624+00,3000,10.00

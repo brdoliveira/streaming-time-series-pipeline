@@ -1,0 +1,3 @@
+﻿
+2026-09-07T22:36:49.3130062Z [INFO] Coletor iniciado (intervalo=10s).
+2026-09-07T22:42:32.3340730Z [INFO] Coletor encerrado: docker_samples=161; flink_samples=0.
