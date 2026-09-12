@@ -13,3 +13,5 @@ flink-job/target/
 results/
 scripts/experiments/*.log
 scripts/experiments/results-*/
+!scripts/experiments/results-repeated/
+!scripts/experiments/results-repeated/**

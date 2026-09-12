@@ -19,24 +19,24 @@ $scenarios = @(
 
 $first = $true
 foreach ($scenario in $scenarios) {
-  $argsList = @(
-    "-Scenario", $scenario.Name,
-    "-RatePerSecond", $scenario.Rate,
-    "-DurationSeconds", $scenario.Duration,
-    "-OutputRoot", $OutputRoot,
-    "-ProducerCount", $ProducerCount,
-    "-ProducerType", $ProducerType
-  )
+  $scenarioParams = @{
+    Scenario = $scenario.Name
+    RatePerSecond = $scenario.Rate
+    DurationSeconds = $scenario.Duration
+    OutputRoot = $OutputRoot
+    ProducerCount = $ProducerCount
+    ProducerType = $ProducerType
+  }
 
   if (-not $first) {
-    $argsList += "-SkipStackStart"
+    $scenarioParams["SkipStackStart"] = $true
   }
 
   if ($Build -and $first) {
-    $argsList += "-Build"
+    $scenarioParams["Build"] = $true
   }
 
-  & $runScenario @argsList
+  & $runScenario @scenarioParams
   $first = $false
 }
 

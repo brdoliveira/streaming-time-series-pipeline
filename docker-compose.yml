@@ -3,7 +3,7 @@
 services:
   kafka:
     image: apache/kafka:3.9.0
-    container_name: pipeline-kafka
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-kafka"
     ports:
       - "${KAFKA_HOST_PORT:-9092}:29092"
     environment:
@@ -33,7 +33,7 @@ services:
 
   kafka-init:
     image: apache/kafka:3.9.0
-    container_name: pipeline-kafka-init
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-kafka-init"
     depends_on:
       kafka:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
 
   timescaledb:
     image: timescale/timescaledb:2.16.1-pg16
-    container_name: pipeline-timescaledb
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-timescaledb"
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
@@ -82,7 +82,7 @@ services:
 
   flink-checkpoint-init:
     image: flink:1.19.1-scala_2.12-java17
-    container_name: pipeline-flink-checkpoint-init
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-flink-checkpoint-init"
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     command: ["chown -R 9999:9999 /opt/flink/checkpoints && chmod 0770 /opt/flink/checkpoints"]
@@ -92,7 +92,7 @@ services:
 
   flink-jobmanager:
     image: flink:1.19.1-scala_2.12-java17
-    container_name: pipeline-flink-jobmanager
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-flink-jobmanager"
     command: jobmanager
     depends_on:
       flink-checkpoint-init:
@@ -120,7 +120,7 @@ services:
 
   flink-taskmanager:
     image: flink:1.19.1-scala_2.12-java17
-    container_name: pipeline-flink-taskmanager
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-flink-taskmanager"
     command: taskmanager
     depends_on:
       flink-checkpoint-init:
@@ -142,7 +142,7 @@ services:
 
   grafana:
     image: grafana/grafana-oss:11.1.4
-    container_name: pipeline-grafana
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-grafana"
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -197,7 +197,7 @@ services:
   flink-job:
     build:
       context: ./flink-job
-    container_name: pipeline-flink-job
+    container_name: "${PIPELINE_CONTAINER_PREFIX:-pipeline}-flink-job"
     profiles: ["app"]
     depends_on:
       kafka:
@@ -235,15 +235,15 @@ services:
       - pipeline-net
 networks:
   pipeline-net:
-    name: pipeline-net
+    name: "${PIPELINE_NETWORK_NAME:-pipeline-net}"
     driver: bridge
 
 volumes:
   kafka-data:
-    name: pipeline-kafka-data
+    name: "${PIPELINE_VOLUME_PREFIX:-pipeline}-kafka-data"
   timescale-data:
-    name: pipeline-timescale-data
+    name: "${PIPELINE_VOLUME_PREFIX:-pipeline}-timescale-data"
   grafana-data:
-    name: pipeline-grafana-data
+    name: "${PIPELINE_VOLUME_PREFIX:-pipeline}-grafana-data"
   flink-checkpoints:
-    name: pipeline-flink-checkpoints
+    name: "${PIPELINE_VOLUME_PREFIX:-pipeline}-flink-checkpoints"
